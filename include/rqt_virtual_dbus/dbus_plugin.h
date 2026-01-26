@@ -4,14 +4,18 @@
 #pragma
 
 #include <QMessageBox>
+#include <QScreen>
 #include <QScrollBar>
 #include <QTextBrowser>
+#include <memory>
 #include <rqt_gui_cpp/plugin.h>
 #include <rqt_virtual_dbus/ui_VirtualJoy.h>
 
 #include "rm_msgs/DbusData.h"
+#include "rqt_virtual_dbus/globalmouseinput.h"
 #include "rqt_virtual_dbus/joy_stick.h"
 #include "rqt_virtual_dbus/key_button.h"
+#include "rqt_virtual_dbus/mouse_button.h"
 #include "rqt_virtual_dbus/slip_button.h"
 
 namespace rqt_virtual_dbus {
@@ -29,6 +33,7 @@ public:
                     qt_gui_cpp::Settings &instance_settings) const override;
   void restoreSettings(const qt_gui_cpp::Settings &plugin_settings,
                        const qt_gui_cpp::Settings &instance_settings) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
   void getLeftJoyValue();
   void getRightJoyValue();
@@ -43,6 +48,8 @@ public:
   void updateSwitchState();
   void startWheelResetTimer();
   void updateWheelState();
+  void updateMouseXY(double x, double y);
+  void updateCenter();
   // Comment in to signal that the plugin has a way to configure it
   // bool hasConfiguration() const;
   // void triggerConfiguration();
@@ -54,7 +61,10 @@ private:
   JoyStick *joy_stick_left_{}, *joy_stick_right_{};
   SlipButton *slip_button_;
   KeyboardButton *key_button_;
+  MouseButton *mouse_button_;
   QWidget *widget_;
+
+  GlobalMouseInput *global_mouse_;
 
   rm_msgs::DbusData dbus_pub_data_;
   ros::Publisher dbus_pub_;

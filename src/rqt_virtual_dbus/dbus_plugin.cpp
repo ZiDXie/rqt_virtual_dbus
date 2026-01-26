@@ -20,6 +20,7 @@ void MyPlugin::initPlugin(qt_gui_cpp::PluginContext &context) {
   QStringList argv = context.argv();
   // create QWidget
   widget_ = new QWidget();
+  widget_->installEventFilter(this);
   // extend the widget with all attributes and children from UI file
   ui_.setupUi(widget_);
   // add widget to the user interface
@@ -35,7 +36,14 @@ void MyPlugin::initPlugin(qt_gui_cpp::PluginContext &context) {
   joy_stick_right_ = new JoyStick(ui_.joy_3);
   slip_button_ = new SlipButton(ui_.slipButton);
   key_button_ = new KeyboardButton(ui_.key_widget);
+  global_mouse_ = new GlobalMouseInput(ui_.joy);
+  mouse_button_ = new MouseButton(ui_.mouse_widget, global_mouse_);
+  global_mouse_->setSensitivity(0.075);
+  global_mouse_->setDeadzone(0.05);
+  global_mouse_->setMaxDelta(50);
+
   key_button_->setDbusData(&dbus_pub_data_);
+  mouse_button_->setDbusData(&dbus_pub_data_);
 
   pub_rate_ = ui_.rateSpinBox->value();
   state_ = ControlMode::RC;
@@ -43,6 +51,8 @@ void MyPlugin::initPlugin(qt_gui_cpp::PluginContext &context) {
   wheel_timer_ = new QTimer(this);
   topicNameUpdated();
 
+  connect(this->global_mouse_, &GlobalMouseInput::updated, this,
+          &MyPlugin::updateMouseXY);
   connect(this->joy_stick_left_, &JoyStick::pointMoved, this,
           &MyPlugin::getLeftJoyValue);
   connect(this->joy_stick_right_, &JoyStick::pointMoved, this,
@@ -64,9 +74,10 @@ void MyPlugin::initPlugin(qt_gui_cpp::PluginContext &context) {
           &MyPlugin::startWheelResetTimer);
   connect(this->wheel_timer_, &QTimer::timeout, this,
           &MyPlugin::updateWheelState);
-
   connect(this, &MyPlugin::slipChange, this->key_button_,
           &KeyboardButton::updateSlip);
+
+  QTimer::singleShot(1000, this, [=]() { updateCenter(); });
 }
 
 void MyPlugin::shutdownPlugin() {
@@ -111,8 +122,10 @@ void MyPlugin::topicNameUpdated() {
 void MyPlugin::updatePublisher() {
   if (slip_button_->getState()) {
     if (state_ == ControlMode::PC) {
-      dbus_pub_data_.m_x = joy_stick_left_->x_display_;
-      dbus_pub_data_.m_y = -joy_stick_left_->y_display_;
+      if (!this->mouse_button_->isChecked()) {
+        dbus_pub_data_.m_x = joy_stick_left_->x_display_;
+        dbus_pub_data_.m_y = joy_stick_left_->y_display_;
+      }
     }
 
     dbus_pub_data_.ch_l_x = joy_stick_left_->x_display_;
@@ -182,7 +195,7 @@ void MyPlugin::updateSwitchState() {
   int left_value = ui_.left_switch->value(),
       right_value = ui_.right_switch->value();
 
-  //拨杆归位
+  // 拨杆归位
   if (0 <= left_value && left_value < 30)
     ui_.left_switch->setValue(SwitchState::UP);
   else if (30 <= left_value && left_value < 70)
@@ -197,7 +210,7 @@ void MyPlugin::updateSwitchState() {
   else if (70 <= right_value && right_value < 100)
     ui_.right_switch->setValue(SwitchState::DOWN);
 
-  //匹配控制模式
+  // 匹配控制模式
   switch (ui_.right_switch->value()) {
   case SwitchState::UP:
     state_ = ControlMode::PC;
@@ -227,5 +240,26 @@ void MyPlugin::updateWheelState() {
   }
 }
 
+void MyPlugin::updateMouseXY(double x, double y) {
+  dbus_pub_data_.m_x = x;
+  dbus_pub_data_.m_y = -y;
+}
+
+void MyPlugin::updateCenter() {
+  if (!widget_->isVisible())
+    return;
+  QPoint locked_mouse_center = this->joy_stick_left_->mapToGlobal(
+      this->joy_stick_left_->rect().center());
+  global_mouse_->setLockCenter(locked_mouse_center);
+}
+
+bool MyPlugin::eventFilter(QObject *watched, QEvent *event) {
+  if (event->type() == QEvent::Resize || event->type() == QEvent::Move) {
+    if (watched == widget_) {
+      updateCenter();
+    }
+  }
+  return QObject::eventFilter(watched, event);
+}
 } // namespace rqt_virtual_dbus
 PLUGINLIB_EXPORT_CLASS(rqt_virtual_dbus::MyPlugin, rqt_gui_cpp::Plugin)
